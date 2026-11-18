@@ -1,32 +1,50 @@
+
 import { supabase } from "./supabase.js";
 
+// ==========================================
+// INITIALIZE EQUIPMENT PAGE
+// ==========================================
+
 document.addEventListener("DOMContentLoaded", () => {
+
     loadEquipment();
 
+    // Add Equipment Form
     const equipmentForm = document.getElementById("equipmentForm");
 
     if (equipmentForm) {
-        equipmentForm.addEventListener("submit", async (e) => {
-            e.preventDefault();
+        equipmentForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
             await addEquipment();
         });
     }
 
-    // Search
+    // Search Equipment
     const search = document.getElementById("equipmentSearch");
-    const filter = document.getElementById("availabilityFilter");
 
     if (search) {
         search.addEventListener("input", loadEquipment);
     }
 
+    // Filter Equipment
+    const filter = document.getElementById("availabilityFilter");
+
     if (filter) {
         filter.addEventListener("change", loadEquipment);
     }
+
+    // Refresh when borrowing or returning equipment
+    window.addEventListener("equipmentChanged", loadEquipment);
+
 });
 
 
+// ==========================================
+// LOAD EQUIPMENT FROM SUPABASE
+// ==========================================
+
 async function loadEquipment() {
+
     const tableBody = document.getElementById("equipmentTableBody");
     const dashboardBody = document.getElementById("dashboardEquipmentBody");
 
@@ -36,13 +54,24 @@ async function loadEquipment() {
         .order("id", { ascending: false });
 
     if (error) {
+
         console.error("Load equipment error:", error);
 
         if (tableBody) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="7">
-                        Error loading equipment: ${error.message}
+                    <td colspan="6">
+                        Error loading equipment: ${escapeHtml(error.message)}
+                    </td>
+                </tr>
+            `;
+        }
+
+        if (dashboardBody) {
+            dashboardBody.innerHTML = `
+                <tr>
+                    <td colspan="5">
+                        Error loading equipment: ${escapeHtml(error.message)}
                     </td>
                 </tr>
             `;
@@ -51,201 +80,300 @@ async function loadEquipment() {
         return;
     }
 
-    let equipment = data || [];
+    // Keep all equipment records
+    const allEquipment = data || [];
 
-    // Search
+    // ======================================
+    // SEARCH AND FILTER
+    // ======================================
+
     const searchInput = document.getElementById("equipmentSearch");
     const filterInput = document.getElementById("availabilityFilter");
 
     const searchText = searchInput
-        ? searchInput.value.toLowerCase()
+        ? searchInput.value.toLowerCase().trim()
         : "";
 
     const availability = filterInput
         ? filterInput.value
-        : "";
+        : "All";
 
-    equipment = equipment.filter(item => {
+    // Filter only the Equipment page
+    const filteredEquipment = allEquipment.filter(item => {
 
         const matchesSearch =
-            item.equipment_name.toLowerCase().includes(searchText) ||
-            item.category.toLowerCase().includes(searchText) ||
-            item.asset_code.toLowerCase().includes(searchText);
+            String(item.equipment_name || "").toLowerCase().includes(searchText) ||
+            String(item.category || "").toLowerCase().includes(searchText) ||
+            String(item.asset_code || "").toLowerCase().includes(searchText);
 
         const matchesAvailability =
             !availability ||
+            availability === "All" ||
             item.availability === availability;
 
         return matchesSearch && matchesAvailability;
+
     });
 
 
-    // Equipment table
+    // ======================================
+    // DISPLAY EQUIPMENT TABLE
+    // ======================================
+
     if (tableBody) {
+
         tableBody.innerHTML = "";
 
-        if (equipment.length === 0) {
+        if (filteredEquipment.length === 0) {
+
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="7">No equipment found.</td>
+                    <td colspan="6">No equipment found.</td>
                 </tr>
             `;
+
         } else {
 
-            equipment.forEach(item => {
+            filteredEquipment.forEach(item => {
 
                 tableBody.innerHTML += `
                     <tr>
-                        <td>${item.id}</td>
-                        <td>${escapeHtml(item.equipment_name)}</td>
-                        <td>${escapeHtml(item.category)}</td>
-                        <td>${escapeHtml(item.asset_code)}</td>
-                        <td>${escapeHtml(item.condition || "Good")}</td>
-                        <td>${escapeHtml(item.availability || "Available")}</td>
+
                         <td>
-                            <button onclick="deleteEquipment(${item.id})">
+                            ${escapeHtml(item.asset_code)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.equipment_name)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.category)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.condition || "Good")}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.availability || "Available")}
+                        </td>
+
+                        <td>
+                            <button
+                                type="button"
+                                onclick="deleteEquipment(${Number(item.id)})"
+                            >
                                 Delete
                             </button>
                         </td>
+
                     </tr>
                 `;
+
             });
+
         }
+
     }
 
 
-    // Dashboard table
+    // ======================================
+    // DISPLAY DASHBOARD RECENT EQUIPMENT
+    // ======================================
+
     if (dashboardBody) {
+
         dashboardBody.innerHTML = "";
 
-        equipment.slice(0, 5).forEach(item => {
+        // Always use ALL equipment records here.
+        // Do not use filteredEquipment.
 
-            dashboardBody.innerHTML += `
+        if (allEquipment.length === 0) {
+
+            dashboardBody.innerHTML = `
                 <tr>
-                    <td>${escapeHtml(item.equipment_name)}</td>
-                    <td>${escapeHtml(item.category)}</td>
-                    <td>${escapeHtml(item.asset_code)}</td>
-                    <td>${escapeHtml(item.availability || "Available")}</td>
+                    <td colspan="5">No equipment records yet.</td>
                 </tr>
             `;
-        });
+
+        } else {
+
+            allEquipment.slice(0, 5).forEach(item => {
+
+                dashboardBody.innerHTML += `
+                    <tr>
+
+                        <td>
+                            ${escapeHtml(item.asset_code)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.equipment_name)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.category)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.condition || "Good")}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(item.availability || "Available")}
+                        </td>
+
+                    </tr>
+                `;
+
+            });
+
+        }
+
     }
 
 
-    // Update dashboard numbers
-    updateEquipmentStats(data || []);
+    // ======================================
+    // UPDATE DASHBOARD STATISTICS
+    // ======================================
 
-    // Update borrowing dropdown
+    updateEquipmentStats(allEquipment);
+
+    await updateOverdueStats();
+
+
+    // ======================================
+    // UPDATE BORROWING DROPDOWN
+    // ======================================
+
     const borrowEquipment = document.getElementById("borrowEquipment");
 
     if (borrowEquipment) {
 
-        const availableEquipment = (data || []).filter(
+        const availableEquipment = allEquipment.filter(
             item => item.availability === "Available"
         );
 
-        borrowEquipment.innerHTML =
-            `<option value="">Select equipment</option>`;
+        borrowEquipment.innerHTML = `
+            <option value="">Select Available Equipment</option>
+        `;
 
         availableEquipment.forEach(item => {
 
             borrowEquipment.innerHTML += `
-                <option value="${item.id}">
+                <option value="${Number(item.id)}">
                     ${escapeHtml(item.equipment_name)}
                     - ${escapeHtml(item.asset_code)}
                 </option>
             `;
+
         });
+
     }
+
 }
 
+
+// ==========================================
+// ADD EQUIPMENT
+// ==========================================
 
 async function addEquipment() {
 
     const name = document.getElementById("equipmentName").value.trim();
-    const category = document.getElementById("equipmentCategory").value.trim();
+
+    const category = document.getElementById("equipmentCategory").value;
+
     const assetCode = document.getElementById("assetCode").value.trim();
+
     const condition = document.getElementById("equipmentCondition").value;
 
     const message = document.getElementById("equipmentMessage");
 
-
-    // Check required fields
+    // Validate required fields
     if (!name || !category || !assetCode) {
 
-        if (message) {
-            message.textContent =
-                "Please fill in all required fields.";
-        }
+        showMessage(
+            message,
+            "Please fill in all required fields.",
+            "error"
+        );
 
         return;
     }
 
 
-    // Get logged-in user
-    const { data: { user } } = await supabase.auth.getUser();
+    // Check authenticated user
+    const {
+        data: { user },
+        error: authError
+    } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (authError || !user) {
 
-        if (message) {
-            message.textContent =
-                "You are not logged in.";
-        }
+        showMessage(
+            message,
+            "You are not logged in. Please log in again.",
+            "error"
+        );
 
         return;
     }
 
 
-    // Insert equipment
+    // Insert equipment into Supabase
     const { data, error } = await supabase
         .from("equipment")
-        .insert([
-            {
-                equipment_name: name,
-                category: category,
-                asset_code: assetCode,
-                condition: condition || "Good",
-                availability: "Available"
-            }
-        ])
-        .select();
+        .insert({
+            equipment_name: name,
+            category: category,
+            asset_code: assetCode,
+            condition: condition || "Good",
+            availability: "Available"
+        })
+        .select()
+        .single();
 
 
     if (error) {
 
         console.error("ADD EQUIPMENT ERROR:", error);
 
-        if (message) {
-            message.textContent =
-                "Failed to add equipment: " + error.message;
-        }
-
-        alert("Failed to add equipment:\n\n" + error.message);
+        showMessage(
+            message,
+            "Failed to add equipment: " + error.message,
+            "error"
+        );
 
         return;
     }
 
 
-    console.log("Equipment added:", data);
+    console.log("Equipment added successfully:", data);
 
-
-    if (message) {
-        message.textContent =
-            "Equipment added successfully!";
-    }
-
-
-    alert("Equipment added successfully!");
+    showMessage(
+        message,
+        "Equipment added successfully!",
+        "success"
+    );
 
 
     // Clear form
     document.getElementById("equipmentForm").reset();
 
 
-    // Reload table
+    // Reload equipment and dashboard
     await loadEquipment();
+
+    alert("Equipment added successfully!");
+
 }
 
+
+// ==========================================
+// DELETE EQUIPMENT
+// ==========================================
 
 async function deleteEquipment(id) {
 
@@ -266,22 +394,26 @@ async function deleteEquipment(id) {
 
     if (error) {
 
-        console.error("Delete error:", error);
+        console.error("DELETE EQUIPMENT ERROR:", error);
 
         alert(
-            "Failed to delete equipment:\n\n" +
-            error.message
+            "Failed to delete equipment: " + error.message
         );
 
         return;
     }
 
 
-    alert("Equipment deleted.");
+    alert("Equipment deleted successfully!");
 
     await loadEquipment();
+
 }
 
+
+// ==========================================
+// UPDATE EQUIPMENT STATISTICS
+// ==========================================
 
 function updateEquipmentStats(equipment) {
 
@@ -297,7 +429,9 @@ function updateEquipmentStats(equipment) {
 
 
     const totalElement = document.getElementById("totalEquipment");
+
     const availableElement = document.getElementById("availableEquipment");
+
     const borrowedElement = document.getElementById("borrowedEquipment");
 
 
@@ -312,8 +446,90 @@ function updateEquipmentStats(equipment) {
     if (borrowedElement) {
         borrowedElement.textContent = borrowed;
     }
+
 }
 
+
+// ==========================================
+// UPDATE OVERDUE STATISTICS
+// ==========================================
+
+async function updateOverdueStats() {
+
+    const overdueElement = document.getElementById("overdueEquipment");
+
+    if (!overdueElement) {
+        return;
+    }
+
+    const { data, error } = await supabase
+        .from("borrow_transactions")
+        .select("id, due_date, date_returned, status");
+
+    if (error) {
+
+        console.error("Overdue statistics error:", error);
+
+        return;
+    }
+
+    // Get today's local date
+    const today = getLocalDate();
+
+    const overdue = (data || []).filter(transaction => {
+
+        return (
+            !transaction.date_returned &&
+            transaction.status !== "Returned" &&
+            transaction.due_date < today
+        );
+
+    }).length;
+
+    overdueElement.textContent = overdue;
+
+}
+
+
+// ==========================================
+// GET LOCAL DATE
+// ==========================================
+
+function getLocalDate() {
+
+    const date = new Date();
+
+    const year = date.getFullYear();
+
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+
+}
+
+
+// ==========================================
+// DISPLAY MESSAGES
+// ==========================================
+
+function showMessage(element, text, type) {
+
+    if (!element) {
+        return;
+    }
+
+    element.textContent = text;
+
+    element.className = "message " + type;
+
+}
+
+
+// ==========================================
+// ESCAPE HTML
+// ==========================================
 
 function escapeHtml(value) {
 
@@ -323,8 +539,12 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+
 }
 
 
-// Make deleteEquipment available to HTML buttons
+// ==========================================
+// MAKE DELETE FUNCTION AVAILABLE TO HTML
+// ==========================================
+
 window.deleteEquipment = deleteEquipment;
